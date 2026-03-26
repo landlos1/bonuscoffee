@@ -57,6 +57,7 @@ class Order(Base):
     # Статус заказа
     status = Column(String(20), default='pending')  # pending, accepted, preparing, ready, completed, cancelled
     preparation_time = Column(Integer, nullable=True)  # в минутах
+    comment = Column(Text, nullable=True)  # комментарий к заказу
     
     # Временные метки
     created_at = Column(DateTime, default=datetime.now)
@@ -273,6 +274,71 @@ async def get_user_orders(user_id: int, limit: int = 10):
             .limit(limit)
         )
         return result.scalars().all()
+
+async def get_orders_statistics():
+    """Получить статистику заказов"""
+    async with async_session() as session:
+        # Общее количество заказов
+        from sqlalchemy import func
+        
+        total_orders_result = await session.execute(select(func.count(Order.id)))
+        total_orders = total_orders_result.scalar()
+        
+        # Заказы по статусам
+        status_counts = {}
+        for status in ['pending', 'accepted', 'preparing', 'ready', 'completed', 'cancelled']:
+            count_result = await session.execute(
+                select(func.count(Order.id)).where(Order.status == status)
+            )
+            status_counts[status] = count_result.scalar()
+        
+        # Общая выручка (только выполненные заказы)
+        revenue_result = await session.execute(
+            select(func.sum(Order.total_price)).where(Order.status.in_(['ready', 'completed']))
+        )
+        total_revenue = revenue_result.scalar() or 0
+        
+        # Общее количество пользователей
+        users_result = await session.execute(select(func.count(User.id)))
+        total_users = users_result.scalar()
+        
+        # Заказы за сегодня
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_orders_result = await session.execute(
+            select(func.count(Order.id)).where(Order.created_at >= today)
+        )
+        today_orders = today_orders_result.scalar()
+        
+        today_revenue_result = await session.execute(
+            select(func.sum(Order.total_price)).where(
+                Order.created_at >= today,
+                Order.status.in_(['ready', 'completed'])
+            )
+        )
+        today_revenue = today_revenue_result.scalar() or 0
+        
+        return {
+            'total_orders': total_orders,
+            'status_counts': status_counts,
+            'total_revenue': total_revenue,
+            'total_users': total_users,
+            'today_orders': today_orders,
+            'today_revenue': today_revenue
+        }
+
+async def update_order_comment(order_id: int, comment: str):
+    """Обновить комментарий к заказу"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order).where(Order.id == order_id)
+        )
+        order = result.scalar_one_or_none()
+        
+        if order:
+            order.comment = comment
+            await session.commit()
+            return order
+        return None
 
 # Импортируем select и update
 from sqlalchemy import select, update

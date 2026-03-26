@@ -8,7 +8,7 @@ from database import (
     init_db, get_or_create_user, get_user_by_telegram_id, get_on_duty_admin,
     set_admin_on_duty, create_order, get_order, update_order_status,
     add_bonuses_to_user, use_bonuses, get_pending_orders, get_all_users,
-    get_user_orders
+    get_user_orders, get_orders_statistics, update_order_comment
 )
 
 # Настройка логирования
@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 # Состояния для ConversationHandler
 (
     REG_FULL_NAME, REG_PHONE, REG_BIRTH_DATE,
-    ORDER_SIZE, ORDER_MILK, ORDER_SYRUP, ORDER_BONUSES, ORDER_CONFIRM,
+    ORDER_SIZE, ORDER_MILK, ORDER_SYRUP, ORDER_COMMENT, ORDER_BONUSES, ORDER_CONFIRM,
     BROADCAST_MESSAGE, BROADCAST_IMAGE
-) = range(10)
+) = range(11)
 
 # Временное хранилище данных заказа
 user_orders = {}
@@ -98,6 +98,10 @@ def get_admin_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton("🔙 В главное меню")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_back_button() -> list:
+    """Кнопка назад"""
+    return [InlineKeyboardButton("🔙 Назад", callback_data="back_menu")]
 
 # ==================== ОБРАБОТЧИКИ КОМАНД ====================
 
@@ -204,6 +208,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"coffee_{coffee['id']}"
         )])
     
+    keyboard.append(get_back_button())
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -241,6 +246,7 @@ async def coffee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"size_{size_key}"
         )])
     
+    keyboard.append(get_back_button())
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
@@ -271,10 +277,13 @@ async def size_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"milk_{milk_key}"
         )])
     
+    keyboard.append([InlineKeyboardButton("🔙 Назад к размерам", callback_data="back_size")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🥛 Выберите тип молока:",
+        f"☕ {user_orders[user_id]['coffee_name']}\n"
+        f"📏 Размер: {user_orders[user_id]['size_name']}\n\n"
+        f"🥛 Выберите тип молока:",
         reply_markup=reply_markup
     )
     return ORDER_MILK
@@ -299,10 +308,14 @@ async def milk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"syrup_{syrup_key}"
         )])
     
+    keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "🍯 Выберите сироп:",
+        f"☕ {user_orders[user_id]['coffee_name']}\n"
+        f"📏 Размер: {user_orders[user_id]['size_name']}\n"
+        f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n\n"
+        f"🍯 Выберите сироп:",
         reply_markup=reply_markup
     )
     return ORDER_SYRUP
@@ -317,6 +330,54 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_orders[user_id]['syrup'] = syrup
     user_orders[user_id]['syrup_name'] = SYRUP_OPTIONS[syrup]['name']
+    
+    # Показываем запрос комментария
+    keyboard = [
+        [InlineKeyboardButton("📝 Добавить комментарий", callback_data="add_comment")],
+        [InlineKeyboardButton("⏭️ Пропустить", callback_data="skip_comment")],
+        [InlineKeyboardButton("🔙 Назад к сиропу", callback_data="back_syrup")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"☕ {user_orders[user_id]['coffee_name']}\n"
+        f"📏 Размер: {user_orders[user_id]['size_name']}\n"
+        f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n"
+        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}\n\n"
+        f"Хотите добавить комментарий к заказу?",
+        reply_markup=reply_markup
+    )
+    return ORDER_COMMENT
+
+async def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик комментария"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    
+    if query.data == "add_comment":
+        await query.edit_message_text(
+            "📝 Введите ваш комментарий к заказу:\n"
+            "(например: 'не слишком горячий', 'без сахара' и т.д.)"
+        )
+        return ORDER_COMMENT
+    elif query.data == "skip_comment":
+        user_orders[user_id]['comment'] = None
+        return await show_bonus_selection(update, context)
+
+async def comment_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ввода комментария"""
+    user_id = update.effective_user.id
+    user_orders[user_id]['comment'] = update.message.text
+    
+    await update.message.reply_text(f"✅ Комментарий сохранен: {update.message.text}")
+    return await show_bonus_selection_message(update, context)
+
+async def show_bonus_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать выбор бонусов (из callback)"""
+    query = update.callback_query
+    user_id = update.effective_user.id
     
     # Рассчитываем цену
     prices = calculate_price(
@@ -343,20 +404,71 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             callback_data=f"bonus_{int(max_bonus)}"
         )])
     
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_comment")])
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    comment_text = f"\n📝 Комментарий: {user_orders[user_id].get('comment', 'нет')}" if user_orders[user_id].get('comment') else ""
     
     order_summary = (
         f"📋 Ваш заказ:\n\n"
         f"☕ {user_orders[user_id]['coffee_name']}\n"
         f"📏 Размер: {user_orders[user_id]['size_name']}\n"
         f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n"
-        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}\n\n"
+        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}{comment_text}\n\n"
         f"💰 Итого: {format_price(prices['total'])}\n"
         f"💎 Доступно бонусов: {int(user.bonuses) if user else 0}\n\n"
         f"Хотите использовать бонусы?"
     )
     
     await query.edit_message_text(order_summary, reply_markup=reply_markup)
+    return ORDER_BONUSES
+
+async def show_bonus_selection_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать выбор бонусов (из message)"""
+    user_id = update.effective_user.id
+    
+    # Рассчитываем цену
+    prices = calculate_price(
+        user_orders[user_id]['coffee_id'],
+        user_orders[user_id]['size'],
+        user_orders[user_id]['milk'],
+        user_orders[user_id]['syrup']
+    )
+    
+    user_orders[user_id]['prices'] = prices
+    
+    # Получаем информацию о пользователе
+    user = await get_user_by_telegram_id(user_id)
+    
+    keyboard = [
+        [InlineKeyboardButton("❌ Не использовать бонусы", callback_data="bonus_0")],
+    ]
+    
+    # Предлагаем использовать бонусы
+    if user and user.bonuses > 0:
+        max_bonus = min(user.bonuses, prices['total'])
+        keyboard.insert(0, [InlineKeyboardButton(
+            f"Использовать {int(max_bonus)} бонусов",
+            callback_data=f"bonus_{int(max_bonus)}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_comment")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    comment_text = f"\n📝 Комментарий: {user_orders[user_id].get('comment', 'нет')}" if user_orders[user_id].get('comment') else ""
+    
+    order_summary = (
+        f"📋 Ваш заказ:\n\n"
+        f"☕ {user_orders[user_id]['coffee_name']}\n"
+        f"📏 Размер: {user_orders[user_id]['size_name']}\n"
+        f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n"
+        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}{comment_text}\n\n"
+        f"💰 Итого: {format_price(prices['total'])}\n"
+        f"💎 Доступно бонусов: {int(user.bonuses) if user else 0}\n\n"
+        f"Хотите использовать бонусы?"
+    )
+    
+    await update.message.reply_text(order_summary, reply_markup=reply_markup)
     return ORDER_BONUSES
 
 async def bonus_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -378,16 +490,19 @@ async def bonus_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("✅ Подтвердить заказ", callback_data="confirm_order")],
         [InlineKeyboardButton("❌ Отменить", callback_data="cancel_order")],
+        [InlineKeyboardButton("🔙 Назад к бонусам", callback_data="back_bonus")],
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    comment_text = f"\n📝 Комментарий: {user_orders[user_id].get('comment', 'нет')}" if user_orders[user_id].get('comment') else ""
     
     order_summary = (
         f"📋 Подтверждение заказа:\n\n"
         f"☕ {user_orders[user_id]['coffee_name']}\n"
         f"📏 Размер: {user_orders[user_id]['size_name']}\n"
         f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n"
-        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}\n\n"
+        f"🍯 Сироп: {user_orders[user_id]['syrup_name']}{comment_text}\n\n"
         f"💰 Сумма: {format_price(prices['total'])}\n"
     )
     
@@ -435,18 +550,24 @@ async def confirm_order_callback(update: Update, context: ContextTypes.DEFAULT_T
         'total_price': prices['total'] - bonuses_used,
         'bonuses_used': bonuses_used,
         'bonuses_earned': order_data.get('cashback', 0),
+        'comment': order_data.get('comment'),
     }
     
     order = await create_order(user.id, coffee_data)
+    
+    # Сохраняем ID заказа для возможного обновления комментария
+    user_orders[user_id]['order_id'] = order.id
     
     # Списываем бонусы
     if bonuses_used > 0:
         await use_bonuses(user.id, bonuses_used)
     
+    comment_text = f"\n📝 Комментарий: {order_data.get('comment')}" if order_data.get('comment') else ""
+    
     # Отправляем уведомление клиенту
     await query.edit_message_text(
         f"✅ Заказ #{order.id} создан!\n\n"
-        f"☕ {order_data['coffee_name']}\n"
+        f"☕ {order_data['coffee_name']}{comment_text}\n"
         f"💵 К оплате: {format_price(prices['total'] - bonuses_used)}\n\n"
         f"{'👨‍💼 Ваш заказ готовит: ' + on_duty_admin.name if on_duty_admin else '⏳ Ожидаем принятия заказа...'}\n\n"
         f"Мы уведомим вас о статусе заказа! 📱"
@@ -459,6 +580,8 @@ async def confirm_order_callback(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("❌ Отменить заказ", callback_data=f"admin_cancel_{order.id}")],
         ])
         
+        comment_text_admin = f"\n📝 Комментарий: {order_data.get('comment')}" if order_data.get('comment') else ""
+        
         try:
             await context.bot.send_message(
                 chat_id=on_duty_admin.telegram_id,
@@ -470,7 +593,7 @@ async def confirm_order_callback(update: Update, context: ContextTypes.DEFAULT_T
                     f"☕ {order_data['coffee_name']}\n"
                     f"📏 Размер: {order_data['size_name']}\n"
                     f"🥛 Молоко: {order_data['milk_name']}\n"
-                    f"🍯 Сироп: {order_data['syrup_name']}\n\n"
+                    f"🍯 Сироп: {order_data['syrup_name']}{comment_text_admin}\n\n"
                     f"💰 Сумма: {format_price(prices['total'])}\n"
                     f"💎 Бонусы: {format_price(bonuses_used)}\n"
                     f"💵 К оплате: {format_price(prices['total'] - bonuses_used)}"
@@ -498,6 +621,91 @@ async def cancel_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
     
     await query.edit_message_text("❌ Заказ отменен")
     return ConversationHandler.END
+
+# ==================== НАВИГАЦИЯ НАЗАД ====================
+
+async def back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик кнопки назад"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    data = query.data
+    
+    if data == "back_menu":
+        # Возврат в главное меню
+        await query.edit_message_text("Используйте кнопки меню для навигации")
+        return ConversationHandler.END
+    
+    elif data == "back_size":
+        # Возврат к выбору кофе
+        coffee = get_coffee_by_id(user_orders[user_id]['coffee_id'])
+        keyboard = []
+        for size_key, size_data in SIZE_OPTIONS.items():
+            price = coffee['price'] * size_data['multiplier']
+            keyboard.append([InlineKeyboardButton(
+                f"{size_data['name']} - {format_price(price)}",
+                callback_data=f"size_{size_key}"
+            )])
+        keyboard.append(get_back_button())
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"☕ Вы выбрали: {coffee['name']}\n"
+            f"📝 {coffee['description']}\n\n"
+            f"Выберите размер:",
+            reply_markup=reply_markup
+        )
+        return ORDER_SIZE
+    
+    elif data == "back_milk":
+        # Возврат к выбору молока
+        keyboard = []
+        for milk_key, milk_data in MILK_OPTIONS.items():
+            price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
+            keyboard.append([InlineKeyboardButton(
+                f"{milk_data['name']} - {price_text}",
+                callback_data=f"milk_{milk_key}"
+            )])
+        keyboard.append([InlineKeyboardButton("🔙 Назад к размерам", callback_data="back_size")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"☕ {user_orders[user_id]['coffee_name']}\n"
+            f"📏 Размер: {user_orders[user_id]['size_name']}\n\n"
+            f"🥛 Выберите тип молока:",
+            reply_markup=reply_markup
+        )
+        return ORDER_MILK
+    
+    elif data == "back_syrup":
+        # Возврат к выбору сиропа
+        keyboard = []
+        for syrup_key, syrup_data in SYRUP_OPTIONS.items():
+            price_text = f"+{format_price(syrup_data['price'])}" if syrup_data['price'] > 0 else "Бесплатно"
+            keyboard.append([InlineKeyboardButton(
+                f"{syrup_data['name']} - {price_text}",
+                callback_data=f"syrup_{syrup_key}"
+            )])
+        keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"☕ {user_orders[user_id]['coffee_name']}\n"
+            f"📏 Размер: {user_orders[user_id]['size_name']}\n"
+            f"🥛 Молоко: {user_orders[user_id]['milk_name']}\n\n"
+            f"🍯 Выберите сироп:",
+            reply_markup=reply_markup
+        )
+        return ORDER_SYRUP
+    
+    elif data == "back_comment":
+        # Возврат к комментарию
+        return await show_bonus_selection(update, context)
+    
+    elif data == "back_bonus":
+        # Возврат к выбору бонусов
+        return await show_bonus_selection(update, context)
 
 # ==================== АДМИНИСТРАТИВНЫЕ ФУНКЦИИ ====================
 
@@ -593,8 +801,10 @@ async def admin_accept_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    comment_text = f"\n📝 Комментарий: {order.comment}" if order.comment else ""
+    
     await query.edit_message_text(
-        f"✅ Заказ #{order_id} принят!\n\n"
+        f"✅ Заказ #{order_id} принят!{comment_text}\n\n"
         f"Выберите время приготовления:",
         reply_markup=reply_markup
     )
@@ -633,13 +843,18 @@ async def admin_preparing_order(update: Update, context: ContextTypes.DEFAULT_TY
     # Обновляем статус
     await update_order_status(order_id, 'preparing', preparation_time=prep_time)
     
+    # Рассчитываем время готовности
+    ready_time = datetime.now() + timedelta(minutes=prep_time)
+    ready_time_str = ready_time.strftime("%H:%M")
+    
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order_id}")],
     ])
     
     await query.edit_message_text(
         f"⏱️ Заказ #{order_id} готовится!\n\n"
-        f"Время приготовления: {prep_time} минут\n\n"
+        f"Время приготовления: {prep_time} минут\n"
+        f"🕐 Будет готов к: {ready_time_str}\n\n"
         f"Нажмите 'Заказ готов' когда заказ будет готов.",
         reply_markup=keyboard
     )
@@ -649,7 +864,7 @@ async def admin_preparing_order(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_message(
             chat_id=order.user.telegram_id,
             text=f"⏱️ Ваш заказ #{order_id} готовится!\n\n"
-                 f"🕐 Заказ будет готов через {prep_time} минут"
+                 f"🕐 Заказ будет готов через {prep_time} минут (к {ready_time_str})"
         )
     except Exception as e:
         logger.error(f"Ошибка уведомления клиента: {e}")
@@ -688,6 +903,7 @@ async def admin_ready_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=order.user.telegram_id,
             text=(
                 f"✅ Ваш заказ #{order_id} готов!\n\n"
+                f"🎉 Можете забирать!\n\n"
                 f"🎁 Вам начислено {format_bonuses(order.bonuses_earned)}\n"
                 f"💰 Текущий баланс: {format_bonuses(order.user.bonuses + order.bonuses_earned)}\n\n"
                 f"Приятного кофепития! ☕"
@@ -748,8 +964,7 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
     
-    text = "📦 Активные заказы:\n\n"
-    
+    # Отправляем каждый заказ отдельным сообщением с кнопками
     for order in orders:
         status_emoji = {
             'pending': '⏳',
@@ -757,9 +972,87 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
             'preparing': '⏱️'
         }.get(order.status, '❓')
         
-        text += f"{status_emoji} Заказ #{order.id} - {order.coffee_name}\n"
-        text += f"   Клиент: {order.user.full_name}\n"
-        text += f"   Статус: {order.status}\n\n"
+        status_text = {
+            'pending': 'Ожидает',
+            'accepted': 'Принят',
+            'preparing': 'Готовится'
+        }.get(order.status, 'Неизвестно')
+        
+        # Рассчитываем оставшееся время
+        remaining_time_text = ""
+        if order.status == 'preparing' and order.preparation_time and order.preparing_at:
+            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
+            remaining = order.preparation_time - int(elapsed)
+            if remaining > 0:
+                remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
+            else:
+                remaining_time_text = f"\n⚠️ Просрочен на: {abs(remaining)} мин"
+        
+        comment_text = f"\n📝 Комментарий: {order.comment}" if order.comment else ""
+        
+        text = (
+            f"{status_emoji} Заказ #{order.id} - {status_text}\n\n"
+            f"☕ {order.coffee_name}\n"
+            f"👤 Клиент: {order.user.full_name}\n"
+            f"📱 Телефон: {order.user.phone_number}\n"
+            f"💰 Сумма: {format_price(order.total_price)}{comment_text}{remaining_time_text}"
+        )
+        
+        # Добавляем кнопки действий в зависимости от статуса
+        keyboard = []
+        if order.status == 'pending':
+            keyboard = [
+                [InlineKeyboardButton("✅ Принять", callback_data=f"admin_accept_{order.id}")],
+                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
+            ]
+        elif order.status == 'accepted':
+            for time in PREPARATION_TIMES:
+                keyboard.append([InlineKeyboardButton(
+                    f"⏱️ {time} мин",
+                    callback_data=f"admin_prep_{order.id}_{time}"
+                )])
+            keyboard.append([InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")])
+        elif order.status == 'preparing':
+            keyboard = [
+                [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order.id}")],
+                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    
+    # Отправляем итоговое сообщение с клавиатурой админа
+    await update.message.reply_text(
+        f"📊 Всего активных заказов: {len(orders)}",
+        reply_markup=get_admin_keyboard()
+    )
+
+async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать статистику"""
+    telegram_id = update.effective_user.id
+    
+    if not is_admin(telegram_id):
+        return
+    
+    stats = await get_orders_statistics()
+    
+    text = (
+        f"📊 Статистика {COFFEE_SHOP_NAME}\n\n"
+        f"📦 Заказы:\n"
+        f"  • Всего: {stats['total_orders']}\n"
+        f"  • Сегодня: {stats['today_orders']}\n"
+        f"  • Ожидают: {stats['status_counts'].get('pending', 0)}\n"
+        f"  • Приняты: {stats['status_counts'].get('accepted', 0)}\n"
+        f"  • Готовятся: {stats['status_counts'].get('preparing', 0)}\n"
+        f"  • Готовы: {stats['status_counts'].get('ready', 0)}\n"
+        f"  • Выполнены: {stats['status_counts'].get('completed', 0)}\n"
+        f"  • Отменены: {stats['status_counts'].get('cancelled', 0)}\n\n"
+        f"💰 Выручка:\n"
+        f"  • Всего: {format_price(stats['total_revenue'])}\n"
+        f"  • Сегодня: {format_price(stats['today_revenue'])}\n\n"
+        f"👥 Пользователей: {stats['total_users']}"
+    )
     
     await update.message.reply_text(text, reply_markup=get_admin_keyboard())
 
@@ -951,31 +1244,46 @@ async def show_current_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Сначала необходимо зарегистрироваться. Нажмите /start")
         return
     
-    orders = await get_user_orders(user.id, limit=1)
+    orders = await get_user_orders(user.id, limit=5)
     
-    if not orders or orders[0].status in ['ready', 'completed', 'cancelled']:
+    # Фильтруем только активные заказы
+    active_orders = [o for o in orders if o.status in ['pending', 'accepted', 'preparing']]
+    
+    if not active_orders:
         await update.message.reply_text("🛒 У вас нет активных заказов. Сделайте заказ через меню!")
         return
     
-    order = orders[0]
-    
-    status_text = {
-        'pending': '⏳ Ожидает принятия',
-        'accepted': '✅ Принят',
-        'preparing': '⏱️ Готовится'
-    }.get(order.status, '❓')
-    
-    admin_name = order.admin.name if order.admin else 'Не назначен'
-    prep_time_text = f"\n🕐 Время приготовления: {order.preparation_time} минут" if order.preparation_time else ""
-    
-    await update.message.reply_text(
-        f"🛒 Ваш текущий заказ #{order.id}:\n\n"
-        f"☕ {order.coffee_name}\n"
-        f"💰 Сумма: {format_price(order.total_price)}\n"
-        f"📊 Статус: {status_text}\n"
-        f"👨‍💼 Готовит: {admin_name}"
-        f"{prep_time_text}"
-    )
+    # Показываем все активные заказы
+    for order in active_orders:
+        status_text = {
+            'pending': '⏳ Ожидает принятия',
+            'accepted': '✅ Принят',
+            'preparing': '⏱️ Готовится'
+        }.get(order.status, '❓')
+        
+        admin_name = order.admin.name if order.admin else 'Не назначен'
+        
+        # Рассчитываем оставшееся время
+        remaining_time_text = ""
+        if order.status == 'preparing' and order.preparation_time and order.preparing_at:
+            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
+            remaining = order.preparation_time - int(elapsed)
+            if remaining > 0:
+                remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
+            else:
+                remaining_time_text = f"\n⚠️ Заказ должен быть готов!"
+        elif order.preparation_time:
+            remaining_time_text = f"\n🕐 Время приготовления: {order.preparation_time} минут"
+        
+        comment_text = f"\n📝 Комментарий: {order.comment}" if order.comment else ""
+        
+        await update.message.reply_text(
+            f"🛒 Заказ #{order.id}:\n\n"
+            f"☕ {order.coffee_name}\n"
+            f"💰 Сумма: {format_price(order.total_price)}\n"
+            f"📊 Статус: {status_text}\n"
+            f"👨‍💼 Готовит: {admin_name}{comment_text}{remaining_time_text}"
+        )
 
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Вернуться в главное меню"""
@@ -1020,7 +1328,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🔙 В главное меню":
         await back_to_main(update, context)
     elif text == "📊 Статистика":
-        await update.message.reply_text("📊 Статистика в разработке...")
+        await admin_statistics(update, context)
     else:
         # Проверяем, зарегистрирован ли пользователь
         user = await get_user_by_telegram_id(telegram_id)
@@ -1061,16 +1369,37 @@ def main():
     order_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(coffee_callback, pattern=r'^coffee_')],
         states={
-            ORDER_SIZE: [CallbackQueryHandler(size_callback, pattern=r'^size_')],
-            ORDER_MILK: [CallbackQueryHandler(milk_callback, pattern=r'^milk_')],
-            ORDER_SYRUP: [CallbackQueryHandler(syrup_callback, pattern=r'^syrup_')],
-            ORDER_BONUSES: [CallbackQueryHandler(bonus_callback, pattern=r'^bonus_')],
+            ORDER_SIZE: [
+                CallbackQueryHandler(size_callback, pattern=r'^size_'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
+            ],
+            ORDER_MILK: [
+                CallbackQueryHandler(milk_callback, pattern=r'^milk_'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
+            ],
+            ORDER_SYRUP: [
+                CallbackQueryHandler(syrup_callback, pattern=r'^syrup_'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
+            ],
+            ORDER_COMMENT: [
+                CallbackQueryHandler(comment_callback, pattern=r'^(add_comment|skip_comment)$'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input),
+            ],
+            ORDER_BONUSES: [
+                CallbackQueryHandler(bonus_callback, pattern=r'^bonus_'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
+            ],
             ORDER_CONFIRM: [
                 CallbackQueryHandler(confirm_order_callback, pattern=r'^confirm_order$'),
                 CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$'),
+                CallbackQueryHandler(back_handler, pattern=r'^back_'),
             ],
         },
-        fallbacks=[CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$')],
+        fallbacks=[
+            CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$'),
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+        ],
     )
     
     # ConversationHandler для рассылки
