@@ -316,12 +316,13 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
     return ORDER_COMMENT
-    
-    async def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик комментария"""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
+    
     if query.data == "add_comment":
         await query.edit_message_text(
             "📝 Введите ваш комментарий к заказу:\n"
