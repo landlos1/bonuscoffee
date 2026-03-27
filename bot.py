@@ -315,9 +315,7 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Хотите добавить комментарий к заказу?",
         reply_markup=reply_markup
     )
-    return ORDER_COMMENT
-    
-    async def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return ORDER_COMMENTasync def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик комментария"""
     query = update.callback_query
     await query.answer()
@@ -557,8 +555,7 @@ async def cancel_order_callback(update: Update, context: ContextTypes.DEFAULT_TY
     if user_id in user_orders:
         del user_orders[user_id]
     await query.edit_message_text("❌ Заказ отменен")
-    return ConversationHandler.END
-    # ==================== НАВИГАЦИЯ НАЗАД ====================
+    return ConversationHandler.END# ==================== НАВИГАЦИЯ НАЗАД ====================
 
 async def back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопки назад"""
@@ -932,8 +929,7 @@ async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"  • Сегодня: {format_price(stats['today_revenue'])}\n\n"
         f"👥 Пользователей: {stats['total_users']}"
     )
-    await update.message.reply_text(text, reply_markup=get_admin_keyboard())
-    # ==================== МАССОВАЯ РАССЫЛКА ====================
+    await update.message.reply_text(text, reply_markup=get_admin_keyboard())# ==================== МАССОВАЯ РАССЫЛКА ====================
 
 async def broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начать массовую рассылку"""
