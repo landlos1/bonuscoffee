@@ -315,7 +315,9 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Хотите добавить комментарий к заказу?",
         reply_markup=reply_markup
     )
-    return ORDER_COMMENTasync def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return ORDER_COMMENT
+    
+    async def comment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик комментария"""
     query = update.callback_query
     await query.answer()
