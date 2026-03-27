@@ -4,9 +4,10 @@ from sqlalchemy.orm import sessionmaker, relationship, selectinload
 from datetime import datetime
 import aiosqlite
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select, update # Добавлен импорт select и update
+from sqlalchemy import select, update
 
 Base = declarative_base()
+
 
 class User(Base):
     __tablename__ = 'users'
@@ -21,6 +22,7 @@ class User(Base):
 
     orders = relationship("Order", back_populates="user")
 
+
 class Admin(Base):
     __tablename__ = 'admins'
     id = Column(Integer, primary_key=True)
@@ -30,6 +32,7 @@ class Admin(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     orders = relationship("Order", back_populates="admin")
+
 
 class Order(Base):
     __tablename__ = 'orders'
@@ -47,14 +50,15 @@ class Order(Base):
     # Цены
     base_price = Column(Float, nullable=False)
     milk_price = Column(Float, default=0.0)
-    syrup_price = Column(Float, default=0.0)    total_price = Column(Float, nullable=False)
+    syrup_price = Column(Float, default=0.0)
+    total_price = Column(Float, nullable=False)
     bonuses_used = Column(Float, default=0.0)
     bonuses_earned = Column(Float, default=0.0)
 
     # Статус заказа
     status = Column(String(20), default='pending')  # pending, accepted, preparing, ready, completed, cancelled
     preparation_time = Column(Integer, nullable=True)  # в минутах
-    comment = Column(Text, nullable=True)  #ментарий к заказу
+    comment = Column(Text, nullable=True)  # комментарий к заказу
 
     # Временные метки
     created_at = Column(DateTime, default=datetime.now)
@@ -70,6 +74,7 @@ class Order(Base):
 # Асинхронный движок
 engine = create_async_engine('sqlite+aiosqlite:///coffee_bot.db', echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
 
 async def init_db():
     """Инициализация базы данных"""
@@ -96,9 +101,10 @@ async def init_db():
 
         await session.commit()
 
+
 async def get_or_create_user(telegram_id: int, full_name: str, phone_number: str, birth_date: str):
     """Получить или создать пользователя"""
-    from config import WELCOME_BONUS
+    WELCOME_BONUS = 100  # Бонус за регистрацию
     async with async_session() as session:
         result = await session.execute(
             select(User).where(User.telegram_id == telegram_id)
@@ -145,6 +151,7 @@ async def get_on_duty_admin():
         )
         return result.scalar_one_or_none()
 
+
 async def set_admin_on_duty(admin_id: int, on_duty: bool):
     """Установить статус администратора"""
     async with async_session() as session:
@@ -184,8 +191,8 @@ async def get_order(order_id: int):
     async with async_session() as session:
         result = await session.execute(
             select(Order)
-            .options(selectinload(Order.user))  # Загрузить связанный User
-            .options(selectinload(Order.admin)) # Загрузить связанный Admin
+            .options(selectinload(Order.user))
+            .options(selectinload(Order.admin))
             .where(Order.id == order_id)
         )
         return result.scalar_one_or_none()
@@ -194,7 +201,8 @@ async def get_order(order_id: int):
 async def update_order_status(order_id: int, status: str, admin_id: int = None, preparation_time: int = None):
     """Обновить статус заказа"""
     async with async_session() as session:
-        result = await session.execute(            select(Order).where(Order.id == order_id)
+        result = await session.execute(
+            select(Order).where(Order.id == order_id)
         )
         order = result.scalar_one_or_none()
         if order:
@@ -243,60 +251,50 @@ async def use_bonuses(user_id: int, amount: float):
             select(User).where(User.id == user_id)
         )
         user = result.scalar_one_or_none()
-        if user and user.bonuses >= amount:            user.bonuses -= amount
+        if user and user.bonuses >= amount:
+            user.bonuses -= amount
             await session.commit()
             return user
     return None
 
 
-#async def get_pending_orders(): # Старое имя
-#    """Получить *незавершенные* заказы (pending, accepted, preparing) с загрузкой связанных user и admin"""
-#    async with async_session() as session:
-#        result = await session.execute(
-#            select(Order).where(Order.status.in_(['pending', 'accepted', 'preparing']))
-#            .options(selectinload(Order.user))
-#            .options(selectinload(Order.admin))
-#            .order_by(Order.created_at.desc()) # Или ASC для старых первыми
-#        )
-#        return result.scalars().all()
-
-# Переименованная функция для лучшего понимания
 async def get_non_completed_orders():
-    """Получить *незавершенные* заказы (pending, accepted, preparing) с загрузкой связанных user и admin"""
+    """Получить незавершенные заказы (pending, accepted, preparing) с загрузкой связанных user и admin"""
     async with async_session() as session:
         result = await session.execute(
             select(Order).where(Order.status.in_(['pending', 'accepted', 'preparing']))
             .options(selectinload(Order.user))
             .options(selectinload(Order.admin))
-            .order_by(Order.created_at.asc()) # Сортировка по возрастанию времени создания
+            .order_by(Order.created_at.asc())
         )
         return result.scalars().all()
 
-# Новая функция с ясным именем
+
 async def get_all_non_completed_orders():
-    """Получить *все* незавершенные заказы (pending, accepted, preparing) с загрузкой связанных user и admin"""
-    # Используем ту же логику, что и get_non_completed_orders
+    """Получить все незавершенные заказы (pending, accepted, preparing)"""
     return await get_non_completed_orders()
 
 
 async def get_user_orders(user_id: int, limit: int = 10):
-    """Получить заказы пользователя с загрузкой связанных user и admin, а также подготовительных полей"""
+    """Получить заказы пользователя"""
     async with async_session() as session:
         result = await session.execute(
             select(Order)
             .where(Order.user_id == user_id)
-            .options(selectinload(Order.user))  # Загрузить связанный User (хотя он известен)
-            .options(selectinload(Order.admin)) # Загрузить связанный Admin
+            .options(selectinload(Order.user))
+            .options(selectinload(Order.admin))
             .order_by(Order.created_at.desc())
             .limit(limit)
         )
         return result.scalars().all()
 
+
 async def get_orders_statistics():
     """Получить статистику заказов"""
     async with async_session() as session:
-        # Общее количество заказов
         from sqlalchemy import func
+
+        # Общее количество заказов
         total_orders_result = await session.execute(select(func.count(Order.id)))
         total_orders = total_orders_result.scalar()
 
@@ -342,6 +340,7 @@ async def get_orders_statistics():
             'today_revenue': today_revenue
         }
 
+
 async def update_order_comment(order_id: int, comment: str):
     """Обновить комментарий к заказу"""
     async with async_session() as session:
@@ -354,5 +353,3 @@ async def update_order_comment(order_id: int, comment: str):
             await session.commit()
             return order
     return None
-
-# Импорты select и update уже добавлены выше
