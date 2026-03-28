@@ -12,7 +12,16 @@ from database import (
     get_user_orders, get_orders_statistics, update_order_comment,
     get_all_non_completed_orders
 )
+import pytz
+from datetime import datetime
 
+# Устанавливаем московский часовой пояс
+NOVOSIBIRSK_TZ = pytz.timezone('Asia/Novosibirsk')
+
+def get_current_time():
+    """Получить текущее время в Москве"""
+    return datetime.now(NOVOSIBIRSK_TZ)
+    
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
