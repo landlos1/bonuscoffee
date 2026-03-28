@@ -15,11 +15,11 @@ from database import (
 import pytz
 from datetime import datetime
 
-# Устанавливаем московский часовой пояс
+# Устанавливаем Новосибирский часовой пояс
 NOVOSIBIRSK_TZ = pytz.timezone('Asia/Novosibirsk')
 
 def get_current_time():
-    """Получить текущее время в Москве"""
+    """Получить текущее время в Новосибирске"""
     return datetime.now(NOVOSIBIRSK_TZ)
     
 # Настройка логирования
@@ -756,8 +756,10 @@ async def admin_preparing_order(update: Update, context: ContextTypes.DEFAULT_TY
     # Обновляем статус
     await update_order_status(order_id, 'preparing', preparation_time=prep_time)
     # Рассчитываем время готовности
-    ready_time = datetime.now() + timedelta(minutes=prep_time)
+    now_novosibirsk = get_current_time()
+    ready_time = now_novosibirsk + timedelta(minutes=prep_time)
     ready_time_str = ready_time.strftime("%H:%M")
+    
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order_id}")],
     ])
@@ -879,8 +881,10 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Рассчитываем оставшееся время
         remaining_time_text = " "
         if order.status == 'preparing' and order.preparation_time and order.preparing_at:
-            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
-            remaining = order.preparation_time - int(elapsed)
+            from datetime import timezone
+        preparing_at_nsk = order.preparing_at.replace(tzinfo=timezone.utc).astimezone(NOVOSIBIRSK_TZ)
+        elapsed = (get_current_time() - preparing_at_nsk).total_seconds() / 60
+        remaining = order.preparation_time - int(elapsed)
             if remaining > 0:
                 remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
             else:
@@ -1121,8 +1125,10 @@ async def show_current_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
         admin_name = order.admin.name if order.admin else 'Не назначен'
         remaining_time_text = " "
         if order.status == 'preparing' and order.preparation_time and order.preparing_at:
-            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
-            remaining = order.preparation_time - int(elapsed)
+            from datetime import timezone
+        preparing_at_nsk = order.preparing_at.replace(tzinfo=timezone.utc).astimezone(NOVOSIBIRSK_TZ)
+        elapsed = (get_current_time() - preparing_at_nsk).total_seconds() / 60
+        remaining = order.preparation_time - int(elapsed)
             if remaining > 0:
                 remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
             else:
