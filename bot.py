@@ -163,6 +163,7 @@ async def reg_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
              "(например: 15.03.1990)"
         )
         return REG_BIRTH_DATE
+        
     telegram_id = update.effective_user.id
     full_name = context.user_data['full_name']
     phone_number = context.user_data['phone_number']
