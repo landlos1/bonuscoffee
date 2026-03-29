@@ -1040,9 +1040,25 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
                     [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
                 ]
             
-            reply_markup = Inlin
-order.id - Domain name for sale
-order.id
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            orders_sent += 1
+            await asyncio.sleep(0.05)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при отправке заказа #{order.id}: {e}")
+            continue
+    
+    await update.message.reply_text(
+        f"📊 **Активные заказы**\n\n✅ Показано: {orders_sent} из {len(orders)} заказов",
+        reply_markup=get_admin_keyboard(),
+        parse_mode='Markdown'
+    )
 
 
 eKeyboardMarkup(keyboard) if keyboard else None
