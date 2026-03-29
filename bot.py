@@ -1060,27 +1060,6 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode='Markdown'
     )
 
-
-            reply_markup = eKeyboardMarkup(keyboard) if keyboard else None
-            
-            await update.message.reply_text(
-            text,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-    )
-            orders_sent += 1
-            await asyncio.sleep(0.05)
-            
-        except Exception as e:
-            logger.error(f"Ошибка при отправке заказа #{order.id}: {e}")
-            continue
-    
-    await update.message.reply_text(
-        f"📊 **Активные заказы**\n\n✅ Показано: {orders_sent} из {len(orders)} заказов",
-        reply_markup=get_admin_keyboard(),
-        parse_mode='Markdown'
-    )
-
 async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать статистику"""
     telegram_id = update.effective_user.id
