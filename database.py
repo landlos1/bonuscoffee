@@ -72,8 +72,21 @@ class Order(Base):
 
 
 # Асинхронный движок
-engine = create_async_engine('sqlite+aiosqlite:///coffee_bot.db', echo=False)
+import os
+
+# Создаем папку для базы данных, если её нет
+DATA_DIR = '/app/data'
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Путь к файлу базы данных
+DB_PATH = os.path.join(DATA_DIR, 'coffee_bot.db')
+
+# Асинхронный движок
+engine = create_async_engine(f'sqlite+aiosqlite:///{DB_PATH}', echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Для отладки - выводим путь к базе
+print(f"📁 База данных будет сохранена в: {DB_PATH}")
 
 
 async def init_db():
