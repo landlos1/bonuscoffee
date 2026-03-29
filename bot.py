@@ -97,6 +97,7 @@ def get_admin_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("✅ На смене"), KeyboardButton("❌ Сойти со смены")],
         [KeyboardButton("📦 Активные заказы"), KeyboardButton("📊 Статистика")],
+        [KeyboardButton("🎁 Управление бонусами")],
         [KeyboardButton("📢 Массовая рассылка")],
         [KeyboardButton("🔙 В главное меню")],
     ]
@@ -952,83 +953,116 @@ async def admin_cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Ошибка уведомления клиента: {e}")
 
 async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать активные заказы"""
+    """Показать все не закрытые заказы"""
     telegram_id = update.effective_user.id
     
     if not is_admin(telegram_id):
+        await update.message.reply_text("❌ У вас нет доступа")
         return
     
-    orders = await get_pending_orders()
+    try:
+        orders = await get_all_non_completed_orders()
+    except Exception as e:
+        logger.error(f"Ошибка получения заказов: {e}")
+        await update.message.reply_text("❌ Ошибка при получении заказов")
+        return
     
     if not orders:
         await update.message.reply_text(
-            "📦 Нет активных заказов",
+            "📦 Нет активных заказов\n\nВсе заказы выполнены или отменены.",
             reply_markup=get_admin_keyboard()
         )
         return
     
-    # Отправляем каждый заказ отдельным сообщением с кнопками
+    orders_sent = 0
     for order in orders:
-        status_emoji = {
-            'pending': '⏳',
-            'accepted': '✅',
-            'preparing': '⏱️'
-        }.get(order.status, '❓')
-        
-        status_text = {
-            'pending': 'Ожидает',
-            'accepted': 'Принят',
-            'preparing': 'Готовится'
-        }.get(order.status, 'Неизвестно')
-        
-        # Рассчитываем оставшееся время
-        remaining_time_text = ""
-        if order.status == 'preparing' and order.preparation_time and order.preparing_at:
-            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
-            remaining = order.preparation_time - int(elapsed)
-            if remaining > 0:
-                remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
-            else:
-                remaining_time_text = f"\n⚠️ Просрочен на: {abs(remaining)} мин"
-        
-        comment_text = f"\n📝 Комментарий: {order.comment}" if order.comment else ""
-        
-        text = (
-            f"{status_emoji} Заказ #{order.id} - {status_text}\n\n"
-            f"☕ {order.coffee_name}\n"
-            f"👤 Клиент: {order.user.full_name}\n"
-            f"📱 Телефон: {order.user.phone_number}\n"
-            f"💰 Сумма: {format_price(order.total_price)}{comment_text}{remaining_time_text}"
-        )
-        
-        # Добавляем кнопки действий в зависимости от статуса
-        keyboard = []
-        if order.status == 'pending':
-            keyboard = [
-                [InlineKeyboardButton("✅ Принять", callback_data=f"admin_accept_{order.id}")],
-                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
-            ]
-        elif order.status == 'accepted':
-            for time in PREPARATION_TIMES:
-                keyboard.append([InlineKeyboardButton(
-                    f"⏱️ {time} мин",
-                    callback_data=f"admin_prep_{order.id}_{time}"
-                )])
-            keyboard.append([InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")])
-        elif order.status == 'preparing':
-            keyboard = [
-                [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order.id}")],
-                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
-            ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-        
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        try:
+            status_emoji = {
+                'pending': '⏳',
+                'accepted': '✅',
+                'preparing': '⏱️',
+                'completed': '✓',
+                'cancelled': '❌'
+            }.get(order.status, '❓')
+            
+            status_text = {
+                'pending': 'Ожидает принятия',
+                'accepted': 'Принят',
+                'preparing': 'Готовится',
+                'completed': 'Выполнен',
+                'cancelled': 'Отменен'
+            }.get(order.status, 'Неизвестно')
+            
+            # Получаем названия из словарей
+            size_name = SIZE_OPTIONS.get(order.size, {}).get('name', order.size)
+            milk_name = MILK_OPTIONS.get(order.milk, {}).get('name', order.milk)
+            syrup_name = SYRUP_OPTIONS.get(order.syrup, {}).get('name', order.syrup)
+            
+            text = f"{status_emoji} **Заказ #{order.id}** - {status_text}\n\n"
+            text += f"☕ **Кофе:** {order.coffee_name}\n"
+            text += f"📏 **Размер:** {size_name}\n"
+            text += f"🥛 **Молоко:** {milk_name}\n"
+            text += f"🍯 **Сироп:** {syrup_name}\n"
+            
+            if order.comment:
+                text += f"📝 **Комментарий:** {order.comment}\n"
+            
+            text += f"\n👤 **Клиент:** {order.user.full_name}\n"
+            text += f"📱 **Телефон:** {order.user.phone_number}\n"
+            text += f"💰 **Сумма:** {format_price(order.total_price)}\n"
+            
+            created_at_nsk = order.created_at + timedelta(hours=7)
+            text += f"🕐 **Создан:** {created_at_nsk.strftime('%d.%m.%Y %H:%M')}\n"
+            
+            if order.status == 'preparing' and order.preparation_time and order.preparing_at:
+                preparing_at_nsk = order.preparing_at + timedelta(hours=7)
+                elapsed = (get_nsk_time() - preparing_at_nsk).total_seconds() / 60
+                remaining = order.preparation_time - int(elapsed)
+                if remaining > 0:
+                    text += f"⏱️ **Осталось:** ~{remaining} мин\n"
+                else:
+                    text += f"⚠️ **Просрочен:** на {abs(remaining)} мин\n"
+            
+            # Кнопки в зависимости от статуса
+            keyboard = []
+            if order.status == 'pending':
+                keyboard = [
+                    [InlineKeyboardButton("✅ Принять заказ", callback_data=f"admin_accept_{order.id}")],
+                    [InlineKeyboardButton("❌ Отменить заказ", callback_data=f"admin_cancel_{order.id}")],
+                ]
+            elif order.status == 'accepted':
+                for t in PREPARATION_TIMES:
+                    keyboard.append([InlineKeyboardButton(f"⏱️ {t} мин", callback_data=f"admin_prep_{order.id}_{t}")])
+                keyboard.append([InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")])
+            elif order.status == 'preparing':
+                keyboard = [
+                    [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order.id}")],
+                    [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
+                ]
+            
+            reply_markup = Inlin
+order.id – Domain name for sale
+order.id
+
+
+eKeyboardMarkup(keyboard) if keyboard else None
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            orders_sent += 1
+            await asyncio.sleep(0.05)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при отправке заказа #{order.id}: {e}")
+            continue
     
-    # Отправляем итоговое сообщение с клавиатурой админа
     await update.message.reply_text(
-        f"📊 Всего активных заказов: {len(orders)}",
-        reply_markup=get_admin_keyboard()
+        f"📊 **Активные заказы**\n\n✅ Показано: {orders_sent} из {len(orders)} заказов",
+        reply_markup=get_admin_keyboard(),
+        parse_mode='Markdown'
     )
 
 async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
