@@ -7,9 +7,8 @@ from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, SIZE_OPTIONS, MILK_
 from database import (
     init_db, get_or_create_user, get_user_by_telegram_id, get_on_duty_admin,
     set_admin_on_duty, create_order, get_order, update_order_status,
-    add_bonuses_to_user, use_bonuses, get_all_users,
-    get_user_orders, get_orders_statistics, update_order_comment,
-    get_all_non_completed_orders
+    add_bonuses_to_user, use_bonuses, get_pending_orders, get_all_users,
+    get_user_orders, get_orders_statistics, update_order_comment
 )
 
 # Настройка логирования
