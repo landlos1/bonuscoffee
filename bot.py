@@ -1041,7 +1041,7 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
                 ]
             
             reply_markup = Inlin
-order.id – Domain name for sale
+order.id - Domain name for sale
 order.id
 
 
