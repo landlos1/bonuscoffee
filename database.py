@@ -272,7 +272,15 @@ async def get_non_completed_orders():
 
 async def get_all_non_completed_orders():
     """Получить все незавершенные заказы (pending, accepted, preparing)"""
-    return await get_non_completed_orders()
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order)
+            .where(Order.status.in_(['pending', 'accepted', 'preparing']))
+            .options(selectinload(Order.user))
+            .options(selectinload(Order.admin))
+            .order_by(Order.created_at.asc())
+        )
+        return result.scalars().all()
 
 
 async def get_user_orders(user_id: int, limit: int = 10):
