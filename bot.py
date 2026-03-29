@@ -52,18 +52,12 @@ def get_coffee_by_id(coffee_id: str) -> dict:
             return coffee
     return None
 
-def calculate_price(coffee_id: str, size: str, milk: str, syrup: str) -> dict:
+def calculate_price(user_order: dict) -> dict:
     """Рассчитать цену заказа"""
-    coffee = get_coffee_by_id(coffee_id)
-    if not coffee:
-        return None
-    
-    base_price = coffee['price'] * SIZE_OPTIONS[size]['multiplier']
-    milk_price = MILK_OPTIONS[milk]['price']
-    syrup_price = SYRUP_OPTIONS[syrup]['price']
-    
+    base_price = user_order.get('base_price', 0)
+    milk_price = user_order.get('milk_price', 0)
+    syrup_price = user_order.get('syrup_price', 0)
     total = base_price + milk_price + syrup_price
-    
     return {
         'base_price': base_price,
         'milk_price': milk_price,
@@ -205,19 +199,23 @@ async def reg_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать меню кофе"""
     keyboard = []
-    
     for coffee in COFFEE_MENU:
+        # Показываем диапазон цен
+        prices = list(coffee['sizes'].values())
+        if len(prices) == 1:
+            price_text = format_price(prices[0])
+        else:
+            price_text = f"{format_price(min(prices))}-{format_price(max(prices))}"
+        
         keyboard.append([InlineKeyboardButton(
-            f"{coffee['name']} - {format_price(coffee['price'])}",
+            f"{coffee['name']} - {price_text}",
             callback_data=f"coffee_{coffee['id']}"
         )])
-    
     keyboard.append(get_back_button())
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(
         f"☕ Меню {COFFEE_SHOP_NAME}:\n\n"
-        f"Выберите кофе:",
+        f"Выберите напиток:",
         reply_markup=reply_markup
     )
 
@@ -225,21 +223,42 @@ async def coffee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора кофе"""
     query = update.callback_query
     await query.answer()
-    
     coffee_id = query.data.replace("coffee_", "")
-    coffee = get_coffee_by_id(coffee_id)
+    
+    # Находим кофе в меню
+    coffee = None
+    for c in COFFEE_MENU:
+        if c['id'] == coffee_id:
+            coffee = c
+            break
     
     if not coffee:
-        await query.edit_message_text("❌ Кофе не найдено")
+        await query.edit_message_text("❌ Напиток не найден")
         return
     
-    # Сохраняем выбор
     user_id = update.effective_user.id
     user_orders[user_id] = {
         'coffee_id': coffee_id,
         'coffee_name': coffee['name'],
-        'base_price': coffee['price']
+        'coffee_data': coffee
     }
+    
+    # Показываем выбор размера/объема
+    keyboard = []
+    for size_name, size_price in coffee['sizes'].items():
+        keyboard.append([InlineKeyboardButton(
+            f"{size_name} - {format_price(size_price)}",
+            callback_data=f"size_{coffee_id}_{size_name}"
+        )])
+    keyboard.append(get_back_button())
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"☕ {coffee['name']}\n"
+        f"📝 {coffee['description']}\n\n"
+        f"Выберите объем:",
+        reply_markup=reply_markup
+    )
+    return ORDER_SIZE
     
     # Показываем выбор размера
     keyboard = []
@@ -266,31 +285,74 @@ async def size_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    size = query.data.replace("size_", "")
+    data = query.data.replace("size_", "").split("_", 1)
+    coffee_id = data[0]
+    size_name = data[1]
+    
     user_id = update.effective_user.id
+    coffee = user_orders[user_id]['coffee_data']
+    size_price = coffee['sizes'][size_name]
     
-    user_orders[user_id]['size'] = size
-    user_orders[user_id]['size_name'] = SIZE_OPTIONS[size]['name']
+    user_orders[user_id]['size'] = size_name
+    user_orders[user_id]['base_price'] = size_price
     
-    # Показываем выбор молока
+    # Если напиток требует выбора молока
+    if coffee.get('has_milk_choice', False):
+        keyboard = []
+        for milk_key, milk_data in MILK_OPTIONS.items():
+            price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
+            keyboard.append([InlineKeyboardButton(
+                f"{milk_data['name']} - {price_text}",
+                callback_data=f"milk_{milk_key}"
+            )])
+        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"☕ {coffee['name']}\n"
+            f"📏 Объем: {size_name}\n"
+            f"💰 Цена: {format_price(size_price)}\n\n"
+            f"🥛 Выберите тип молока:",
+            reply_markup=reply_markup
+        )
+        return ORDER_MILK
+    
+    # Если не требует молока, переходим к сиропу или комментарию
+    elif coffee.get('has_syrup_choice', False):
+        return await show_syrup_selection(update, context)
+    else:
+        return await show_comment_selection(update, context)
+        
+async def show_syrup_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать выбор сиропа"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    coffee = user_orders[user_id]['coffee_data']
+    size_name = user_orders[user_id]['size']
+    size_price = user_orders[user_id]['base_price']
+    
     keyboard = []
-    for milk_key, milk_data in MILK_OPTIONS.items():
-        price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
+    for syrup_key, syrup_data in SYRUP_OPTIONS.items():
+        price_text = f"+{format_price(syrup_data['price'])}" if syrup_data['price'] > 0 else "Бесплатно"
         keyboard.append([InlineKeyboardButton(
-            f"{milk_data['name']} - {price_text}",
-            callback_data=f"milk_{milk_key}"
+            f"{syrup_data['name']} - {price_text}",
+            callback_data=f"syrup_{syrup_key}"
         )])
     
-    keyboard.append([InlineKeyboardButton("🔙 Назад к размерам", callback_data="back_size")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Если было молоко, добавляем кнопку назад
+    if coffee.get('has_milk_choice', False):
+        keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
+    else:
+        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
     
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        f"☕ {user_orders[user_id]['coffee_name']}\n"
-        f"📏 Размер: {user_orders[user_id]['size_name']}\n\n"
-        f"🥛 Выберите тип молока:",
+        f"☕ {coffee['name']}\n"
+        f"📏 Объем: {size_name}\n"
+        f"💰 Цена: {format_price(size_price)}\n\n"
+        f"🍯 Выберите сироп:",
         reply_markup=reply_markup
     )
-    return ORDER_MILK
+    return ORDER_SYRUP
 
 async def milk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора молока"""
@@ -328,12 +390,53 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора сиропа"""
     query = update.callback_query
     await query.answer()
-    
     syrup = query.data.replace("syrup_", "")
     user_id = update.effective_user.id
-    
     user_orders[user_id]['syrup'] = syrup
     user_orders[user_id]['syrup_name'] = SYRUP_OPTIONS[syrup]['name']
+    user_orders[user_id]['syrup_price'] = SYRUP_OPTIONS[syrup]['price']
+    
+    return await show_comment_selection(update, context)
+ 
+async def show_comment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать выбор комментария"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    coffee = user_orders[user_id]['coffee_data']
+    size_name = user_orders[user_id]['size']
+    size_price = user_orders[user_id]['base_price']
+    
+    text = f"☕ {coffee['name']}\n📏 Объем: {size_name}\n💰 Цена: {format_price(size_price)}"
+    
+    if 'milk_name' in user_orders[user_id]:
+        text += f"\n🥛 Молоко: {user_orders[user_id]['milk_name']}"
+        if user_orders[user_id].get('milk_price', 0) > 0:
+            text += f" +{format_price(user_orders[user_id]['milk_price'])}"
+    
+    if 'syrup_name' in user_orders[user_id] and user_orders[user_id]['syrup'] != 'none':
+        text += f"\n🍯 Сироп: {user_orders[user_id]['syrup_name']}"
+        if user_orders[user_id].get('syrup_price', 0) > 0:
+            text += f" +{format_price(user_orders[user_id]['syrup_price'])}"
+    
+    keyboard = [
+        [InlineKeyboardButton("📝 Добавить комментарий", callback_data="add_comment")],
+        [InlineKeyboardButton("⏭️ Пропустить", callback_data="skip_comment")],
+    ]
+    
+    # Добавляем кнопку назад в зависимости от выбора
+    if coffee.get('has_syrup_choice', False):
+        keyboard.append([InlineKeyboardButton("🔙 Назад к сиропу", callback_data="back_syrup")])
+    elif coffee.get('has_milk_choice', False):
+        keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
+    else:
+        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"{text}\n\nХотите добавить комментарий к заказу?",
+        reply_markup=reply_markup
+    )
+    return ORDER_COMMENT
     
     # Показываем запрос комментария
     keyboard = [
@@ -384,12 +487,7 @@ async def show_bonus_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     
     # Рассчитываем цену
-    prices = calculate_price(
-        user_orders[user_id]['coffee_id'],
-        user_orders[user_id]['size'],
-        user_orders[user_id]['milk'],
-        user_orders[user_id]['syrup']
-    )
+    prices = calculate_price(user_orders[user_id])
     
     user_orders[user_id]['prices'] = prices
     
@@ -535,7 +633,7 @@ async def confirm_order_callback(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     
     order_data = user_orders.get(user_id, {})
-    prices = order_data.get('prices', {})
+    prices = calculate_price(order_data)
     bonuses_used = order_data.get('bonuses_used', 0)
     
     # Проверяем, есть ли админ на смене
