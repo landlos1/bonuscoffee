@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, SIZE_OPTIONS, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
+from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, MENU_CATEGORIES, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
 from database import (
     init_db, get_or_create_user, get_user_by_telegram_id, get_on_duty_admin,
     set_admin_on_duty, create_order, get_order, update_order_status,
