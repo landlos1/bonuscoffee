@@ -2,17 +2,14 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
+from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, SIZE_OPTIONS, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
 from database import (
     init_db, get_or_create_user, get_user_by_telegram_id, get_on_duty_admin,
     set_admin_on_duty, create_order, get_order, update_order_status,
-    add_bonuses_to_user, use_bonuses, get_all_users,
-    get_user_orders, get_orders_statistics, update_order_comment,
-    get_all_non_completed_orders, async_session
+    add_bonuses_to_user, use_bonuses, get_pending_orders, get_all_users,
+    get_user_orders, get_orders_statistics, update_order_comment
 )
-from sqlalchemy import select
 
 # Настройка логирования
 logging.basicConfig(
@@ -52,12 +49,18 @@ def get_coffee_by_id(coffee_id: str) -> dict:
             return coffee
     return None
 
-def calculate_price(user_order: dict) -> dict:
+def calculate_price(coffee_id: str, size: str, milk: str, syrup: str) -> dict:
     """Рассчитать цену заказа"""
-    base_price = user_order.get('base_price', 0)
-    milk_price = user_order.get('milk_price', 0)
-    syrup_price = user_order.get('syrup_price', 0)
+    coffee = get_coffee_by_id(coffee_id)
+    if not coffee:
+        return None
+    
+    base_price = coffee['price'] * SIZE_OPTIONS[size]['multiplier']
+    milk_price = MILK_OPTIONS[milk]['price']
+    syrup_price = SYRUP_OPTIONS[syrup]['price']
+    
     total = base_price + milk_price + syrup_price
+    
     return {
         'base_price': base_price,
         'milk_price': milk_price,
@@ -91,7 +94,6 @@ def get_admin_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("✅ На смене"), KeyboardButton("❌ Сойти со смены")],
         [KeyboardButton("📦 Активные заказы"), KeyboardButton("📊 Статистика")],
-        [KeyboardButton("🎁 Управление бонусами")],
         [KeyboardButton("📢 Массовая рассылка")],
         [KeyboardButton("🔙 В главное меню")],
     ]
@@ -199,23 +201,19 @@ async def reg_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать меню кофе"""
     keyboard = []
+    
     for coffee in COFFEE_MENU:
-        # Показываем диапазон цен
-        prices = list(coffee['sizes'].values())
-        if len(prices) == 1:
-            price_text = format_price(prices[0])
-        else:
-            price_text = f"{format_price(min(prices))}-{format_price(max(prices))}"
-        
         keyboard.append([InlineKeyboardButton(
-            f"{coffee['name']} - {price_text}",
+            f"{coffee['name']} - {format_price(coffee['price'])}",
             callback_data=f"coffee_{coffee['id']}"
         )])
+    
     keyboard.append(get_back_button())
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await update.message.reply_text(
         f"☕ Меню {COFFEE_SHOP_NAME}:\n\n"
-        f"Выберите напиток:",
+        f"Выберите кофе:",
         reply_markup=reply_markup
     )
 
@@ -223,42 +221,21 @@ async def coffee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора кофе"""
     query = update.callback_query
     await query.answer()
-    coffee_id = query.data.replace("coffee_", "")
     
-    # Находим кофе в меню
-    coffee = None
-    for c in COFFEE_MENU:
-        if c['id'] == coffee_id:
-            coffee = c
-            break
+    coffee_id = query.data.replace("coffee_", "")
+    coffee = get_coffee_by_id(coffee_id)
     
     if not coffee:
-        await query.edit_message_text("❌ Напиток не найден")
+        await query.edit_message_text("❌ Кофе не найдено")
         return
     
+    # Сохраняем выбор
     user_id = update.effective_user.id
     user_orders[user_id] = {
         'coffee_id': coffee_id,
         'coffee_name': coffee['name'],
-        'coffee_data': coffee
+        'base_price': coffee['price']
     }
-    
-    # Показываем выбор размера/объема
-    keyboard = []
-    for size_name, size_price in coffee['sizes'].items():
-        keyboard.append([InlineKeyboardButton(
-            f"{size_name} - {format_price(size_price)}",
-            callback_data=f"size_{coffee_id}_{size_name}"
-        )])
-    keyboard.append(get_back_button())
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        f"☕ {coffee['name']}\n"
-        f"📝 {coffee['description']}\n\n"
-        f"Выберите объем:",
-        reply_markup=reply_markup
-    )
-    return ORDER_SIZE
     
     # Показываем выбор размера
     keyboard = []
@@ -285,74 +262,31 @@ async def size_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    data = query.data.replace("size_", "").split("_", 1)
-    coffee_id = data[0]
-    size_name = data[1]
-    
+    size = query.data.replace("size_", "")
     user_id = update.effective_user.id
-    coffee = user_orders[user_id]['coffee_data']
-    size_price = coffee['sizes'][size_name]
     
-    user_orders[user_id]['size'] = size_name
-    user_orders[user_id]['base_price'] = size_price
+    user_orders[user_id]['size'] = size
+    user_orders[user_id]['size_name'] = SIZE_OPTIONS[size]['name']
     
-    # Если напиток требует выбора молока
-    if coffee.get('has_milk_choice', False):
-        keyboard = []
-        for milk_key, milk_data in MILK_OPTIONS.items():
-            price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
-            keyboard.append([InlineKeyboardButton(
-                f"{milk_data['name']} - {price_text}",
-                callback_data=f"milk_{milk_key}"
-            )])
-        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"☕ {coffee['name']}\n"
-            f"📏 Объем: {size_name}\n"
-            f"💰 Цена: {format_price(size_price)}\n\n"
-            f"🥛 Выберите тип молока:",
-            reply_markup=reply_markup
-        )
-        return ORDER_MILK
-    
-    # Если не требует молока, переходим к сиропу или комментарию
-    elif coffee.get('has_syrup_choice', False):
-        return await show_syrup_selection(update, context)
-    else:
-        return await show_comment_selection(update, context)
-        
-async def show_syrup_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать выбор сиропа"""
-    query = update.callback_query
-    user_id = update.effective_user.id
-    coffee = user_orders[user_id]['coffee_data']
-    size_name = user_orders[user_id]['size']
-    size_price = user_orders[user_id]['base_price']
-    
+    # Показываем выбор молока
     keyboard = []
-    for syrup_key, syrup_data in SYRUP_OPTIONS.items():
-        price_text = f"+{format_price(syrup_data['price'])}" if syrup_data['price'] > 0 else "Бесплатно"
+    for milk_key, milk_data in MILK_OPTIONS.items():
+        price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
         keyboard.append([InlineKeyboardButton(
-            f"{syrup_data['name']} - {price_text}",
-            callback_data=f"syrup_{syrup_key}"
+            f"{milk_data['name']} - {price_text}",
+            callback_data=f"milk_{milk_key}"
         )])
     
-    # Если было молоко, добавляем кнопку назад
-    if coffee.get('has_milk_choice', False):
-        keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
-    else:
-        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
-    
+    keyboard.append([InlineKeyboardButton("🔙 Назад к размерам", callback_data="back_size")])
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
-        f"☕ {coffee['name']}\n"
-        f"📏 Объем: {size_name}\n"
-        f"💰 Цена: {format_price(size_price)}\n\n"
-        f"🍯 Выберите сироп:",
+        f"☕ {user_orders[user_id]['coffee_name']}\n"
+        f"📏 Размер: {user_orders[user_id]['size_name']}\n\n"
+        f"🥛 Выберите тип молока:",
         reply_markup=reply_markup
     )
-    return ORDER_SYRUP
+    return ORDER_MILK
 
 async def milk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора молока"""
@@ -390,53 +324,12 @@ async def syrup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора сиропа"""
     query = update.callback_query
     await query.answer()
+    
     syrup = query.data.replace("syrup_", "")
     user_id = update.effective_user.id
+    
     user_orders[user_id]['syrup'] = syrup
     user_orders[user_id]['syrup_name'] = SYRUP_OPTIONS[syrup]['name']
-    user_orders[user_id]['syrup_price'] = SYRUP_OPTIONS[syrup]['price']
-    
-    return await show_comment_selection(update, context)
- 
-async def show_comment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать выбор комментария"""
-    query = update.callback_query
-    user_id = update.effective_user.id
-    coffee = user_orders[user_id]['coffee_data']
-    size_name = user_orders[user_id]['size']
-    size_price = user_orders[user_id]['base_price']
-    
-    text = f"☕ {coffee['name']}\n📏 Объем: {size_name}\n💰 Цена: {format_price(size_price)}"
-    
-    if 'milk_name' in user_orders[user_id]:
-        text += f"\n🥛 Молоко: {user_orders[user_id]['milk_name']}"
-        if user_orders[user_id].get('milk_price', 0) > 0:
-            text += f" +{format_price(user_orders[user_id]['milk_price'])}"
-    
-    if 'syrup_name' in user_orders[user_id] and user_orders[user_id]['syrup'] != 'none':
-        text += f"\n🍯 Сироп: {user_orders[user_id]['syrup_name']}"
-        if user_orders[user_id].get('syrup_price', 0) > 0:
-            text += f" +{format_price(user_orders[user_id]['syrup_price'])}"
-    
-    keyboard = [
-        [InlineKeyboardButton("📝 Добавить комментарий", callback_data="add_comment")],
-        [InlineKeyboardButton("⏭️ Пропустить", callback_data="skip_comment")],
-    ]
-    
-    # Добавляем кнопку назад в зависимости от выбора
-    if coffee.get('has_syrup_choice', False):
-        keyboard.append([InlineKeyboardButton("🔙 Назад к сиропу", callback_data="back_syrup")])
-    elif coffee.get('has_milk_choice', False):
-        keyboard.append([InlineKeyboardButton("🔙 Назад к молоку", callback_data="back_milk")])
-    else:
-        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        f"{text}\n\nХотите добавить комментарий к заказу?",
-        reply_markup=reply_markup
-    )
-    return ORDER_COMMENT
     
     # Показываем запрос комментария
     keyboard = [
@@ -487,7 +380,12 @@ async def show_bonus_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     
     # Рассчитываем цену
-    prices = calculate_price(user_orders[user_id])
+    prices = calculate_price(
+        user_orders[user_id]['coffee_id'],
+        user_orders[user_id]['size'],
+        user_orders[user_id]['milk'],
+        user_orders[user_id]['syrup']
+    )
     
     user_orders[user_id]['prices'] = prices
     
@@ -633,7 +531,7 @@ async def confirm_order_callback(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     
     order_data = user_orders.get(user_id, {})
-    prices = calculate_price(order_data)
+    prices = order_data.get('prices', {})
     bonuses_used = order_data.get('bonuses_used', 0)
     
     # Проверяем, есть ли админ на смене
@@ -1051,111 +949,83 @@ async def admin_cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Ошибка уведомления клиента: {e}")
 
 async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать все не закрытые заказы"""
+    """Показать активные заказы"""
     telegram_id = update.effective_user.id
     
     if not is_admin(telegram_id):
-        await update.message.reply_text("❌ У вас нет доступа")
         return
     
-    try:
-        orders = await get_all_non_completed_orders()
-    except Exception as e:
-        logger.error(f"Ошибка получения заказов: {e}")
-        await update.message.reply_text("❌ Ошибка при получении заказов")
-        return
+    orders = await get_pending_orders()
     
     if not orders:
         await update.message.reply_text(
-            "📦 Нет активных заказов\n\nВсе заказы выполнены или отменены.",
+            "📦 Нет активных заказов",
             reply_markup=get_admin_keyboard()
         )
         return
     
-    orders_sent = 0
+    # Отправляем каждый заказ отдельным сообщением с кнопками
     for order in orders:
-        try:
-            status_emoji = {
-                'pending': '⏳',
-                'accepted': '✅',
-                'preparing': '⏱️',
-                'completed': '✓',
-                'cancelled': '❌'
-            }.get(order.status, '❓')
-            
-            status_text = {
-                'pending': 'Ожидает принятия',
-                'accepted': 'Принят',
-                'preparing': 'Готовится',
-                'completed': 'Выполнен',
-                'cancelled': 'Отменен'
-            }.get(order.status, 'Неизвестно')
-            
-            # Получаем названия из словарей
-            size_name = order.size
-            milk_name = MILK_OPTIONS.get(order.milk, {}).get('name', order.milk)
-            syrup_name = SYRUP_OPTIONS.get(order.syrup, {}).get('name', order.syrup)
-            
-            text = f"{status_emoji} **Заказ #{order.id}** - {status_text}\n\n"
-            text += f"☕ **Кофе:** {order.coffee_name}\n"
-            text += f"📏 **Размер:** {size_name}\n"
-            text += f"🥛 **Молоко:** {milk_name}\n"
-            text += f"🍯 **Сироп:** {syrup_name}\n"
-            
-            if order.comment:
-                text += f"📝 **Комментарий:** {order.comment}\n"
-            
-            text += f"\n👤 **Клиент:** {order.user.full_name}\n"
-            text += f"📱 **Телефон:** {order.user.phone_number}\n"
-            text += f"💰 **Сумма:** {format_price(order.total_price)}\n"
-            
-            created_at_nsk = order.created_at + timedelta(hours=7)
-            text += f"🕐 **Создан:** {created_at_nsk.strftime('%d.%m.%Y %H:%M')}\n"
-            
-            if order.status == 'preparing' and order.preparation_time and order.preparing_at:
-                preparing_at_nsk = order.preparing_at + timedelta(hours=7)
-                elapsed = (get_nsk_time() - preparing_at_nsk).total_seconds() / 60
-                remaining = order.preparation_time - int(elapsed)
-                if remaining > 0:
-                    text += f"⏱️ **Осталось:** ~{remaining} мин\n"
-                else:
-                    text += f"⚠️ **Просрочен:** на {abs(remaining)} мин\n"
-            
-            # Кнопки в зависимости от статуса
-            keyboard = []
-            if order.status == 'pending':
-                keyboard = [
-                    [InlineKeyboardButton("✅ Принять заказ", callback_data=f"admin_accept_{order.id}")],
-                    [InlineKeyboardButton("❌ Отменить заказ", callback_data=f"admin_cancel_{order.id}")],
-                ]
-            elif order.status == 'accepted':
-                for t in PREPARATION_TIMES:
-                    keyboard.append([InlineKeyboardButton(f"⏱️ {t} мин", callback_data=f"admin_prep_{order.id}_{t}")])
-                keyboard.append([InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")])
-            elif order.status == 'preparing':
-                keyboard = [
-                    [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order.id}")],
-                    [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
-                ]
-            
-            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-            
-            await update.message.reply_text(
-                text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-            orders_sent += 1
-            await asyncio.sleep(0.05)
-            
-        except Exception as e:
-            logger.error(f"Ошибка при отправке заказа #{order.id}: {e}")
-            continue
+        status_emoji = {
+            'pending': '⏳',
+            'accepted': '✅',
+            'preparing': '⏱️'
+        }.get(order.status, '❓')
+        
+        status_text = {
+            'pending': 'Ожидает',
+            'accepted': 'Принят',
+            'preparing': 'Готовится'
+        }.get(order.status, 'Неизвестно')
+        
+        # Рассчитываем оставшееся время
+        remaining_time_text = ""
+        if order.status == 'preparing' and order.preparation_time and order.preparing_at:
+            elapsed = (datetime.now() - order.preparing_at).total_seconds() / 60
+            remaining = order.preparation_time - int(elapsed)
+            if remaining > 0:
+                remaining_time_text = f"\n⏱️ Осталось: ~{remaining} мин"
+            else:
+                remaining_time_text = f"\n⚠️ Просрочен на: {abs(remaining)} мин"
+        
+        comment_text = f"\n📝 Комментарий: {order.comment}" if order.comment else ""
+        
+        text = (
+            f"{status_emoji} Заказ #{order.id} - {status_text}\n\n"
+            f"☕ {order.coffee_name}\n"
+            f"👤 Клиент: {order.user.full_name}\n"
+            f"📱 Телефон: {order.user.phone_number}\n"
+            f"💰 Сумма: {format_price(order.total_price)}{comment_text}{remaining_time_text}"
+        )
+        
+        # Добавляем кнопки действий в зависимости от статуса
+        keyboard = []
+        if order.status == 'pending':
+            keyboard = [
+                [InlineKeyboardButton("✅ Принять", callback_data=f"admin_accept_{order.id}")],
+                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
+            ]
+        elif order.status == 'accepted':
+            for time in PREPARATION_TIMES:
+                keyboard.append([InlineKeyboardButton(
+                    f"⏱️ {time} мин",
+                    callback_data=f"admin_prep_{order.id}_{time}"
+                )])
+            keyboard.append([InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")])
+        elif order.status == 'preparing':
+            keyboard = [
+                [InlineKeyboardButton("✅ Заказ готов", callback_data=f"admin_ready_{order.id}")],
+                [InlineKeyboardButton("❌ Отменить", callback_data=f"admin_cancel_{order.id}")],
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        
+        await update.message.reply_text(text, reply_markup=reply_markup)
     
+    # Отправляем итоговое сообщение с клавиатурой админа
     await update.message.reply_text(
-        f"📊 **Активные заказы**\n\n✅ Показано: {orders_sent} из {len(orders)} заказов",
-        reply_markup=get_admin_keyboard(),
-        parse_mode='Markdown'
+        f"📊 Всего активных заказов: {len(orders)}",
+        reply_markup=get_admin_keyboard()
     )
 
 async def admin_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
