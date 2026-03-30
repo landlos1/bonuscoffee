@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, SIZE_OPTIONS, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
+from config import BOT_TOKEN, COFFEE_SHOP_NAME, COFFEE_MENU, MILK_OPTIONS, SYRUP_OPTIONS, PREPARATION_TIMES, CASHBACK_PERCENT, BIRTHDAY_BONUS, ADMINS
 from database import (
     init_db, get_or_create_user, get_user_by_telegram_id, get_on_duty_admin,
     set_admin_on_duty, create_order, get_order, update_order_status,
@@ -1092,7 +1092,7 @@ async def admin_active_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
             }.get(order.status, 'Неизвестно')
             
             # Получаем названия из словарей
-            size_name = SIZE_OPTIONS.get(order.size, {}).get('name', order.size)
+            size_name = order.size
             milk_name = MILK_OPTIONS.get(order.milk, {}).get('name', order.milk)
             syrup_name = SYRUP_OPTIONS.get(order.syrup, {}).get('name', order.syrup)
             
