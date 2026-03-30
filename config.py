@@ -37,165 +37,185 @@ WELCOME_BONUS = int(os.getenv("WELCOME_BONUS", "100"))
 BIRTHDAY_BONUS = int(os.getenv("BIRTHDAY_BONUS", "500"))
 CASHBACK_PERCENT = int(os.getenv("CASHBACK_PERCENT", "5"))
 
-# ==================== МЕНЮ КОФЕ ====================
+# ==================== КАТЕГОРИИ МЕНЮ ====================
 
-COFFEE_MENU = [
-    # Классический кофе
-    {
-        "id": "latte",
-        "name": "Латте",
-        "description": "Нежный кофе с молоком",
-        "sizes": {"350 мл": 250, "450 мл": 270},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
+MENU_CATEGORIES = {
+    "coffee": {
+        "name": "☕ Кофе",
+        "emoji": "☕",
+        "items": [
+            {
+                "id": "latte",
+                "name": "Латте",
+                "description": "Нежный кофе с молоком",
+                "sizes": {"350 мл": 250, "450 мл": 270},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "cappuccino",
+                "name": "Капучино",
+                "description": "Кофе с плотной молочной пенкой",
+                "sizes": {"350 мл": 250, "450 мл": 270},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "americano",
+                "name": "Американо",
+                "description": "Эспрессо с горячей водой",
+                "sizes": {"300 мл": 220},
+                "has_milk_choice": False,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "espresso",
+                "name": "Эспрессо",
+                "description": "Классический эспрессо",
+                "sizes": {"40 мл": 150},
+                "has_milk_choice": False,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "moccaccino",
+                "name": "Моккачино",
+                "description": "Кофе с шоколадом и молоком",
+                "sizes": {"350 мл": 260, "450 мл": 280},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "flat_white",
+                "name": "Флэт Уайт",
+                "description": "Двойной эспрессо с нежным молоком",
+                "sizes": {"250 мл": 240},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            }
+        ]
     },
-    {
-        "id": "cappuccino",
-        "name": "Капучино",
-        "description": "Кофе с плотной молочной пенкой",
-        "sizes": {"350 мл": 250, "450 мл": 270},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
+    "raf_coffee": {
+        "name": "🥛 Раф кофе",
+        "emoji": "🥛",
+        "items": [
+            {
+                "id": "raf_classic",
+                "name": "Раф Классический",
+                "description": "Классический раф с ванилью",
+                "sizes": {"350 мл": 320, "450 мл": 340},
+                "has_milk_choice": True,
+                "has_syrup_choice": True
+            },
+            {
+                "id": "raf_salted_caramel",
+                "name": "Раф Соленая карамель",
+                "description": "Раф с соленой карамелью",
+                "sizes": {"350 мл": 280, "450 мл": 300},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "raf_peanut",
+                "name": "Раф Арахисовый",
+                "description": "Раф с арахисовым вкусом",
+                "sizes": {"350 мл": 340, "450 мл": 360},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "raf_cheese",
+                "name": "Раф Сырный",
+                "description": "Раф с сырным вкусом",
+                "sizes": {"350 мл": 320, "450 мл": 350},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "raf_orange",
+                "name": "Раф Апельсиновый",
+                "description": "Раф с апельсиновым вкусом",
+                "sizes": {"350 мл": 320, "450 мл": 340},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            }
+        ]
     },
-    {
-        "id": "americano",
-        "name": "Американо",
-        "description": "Эспрессо с горячей водой",
-        "sizes": {"300 мл": 220},
-        "has_milk_choice": False,
-        "has_syrup_choice": False
+    "non_coffee": {
+        "name": "🍵 Не кофе",
+        "emoji": "🍵",
+        "items": [
+            {
+                "id": "cocoa",
+                "name": "Какао",
+                "description": "Горячее какао (без сахара, можно добавить в комментарии)",
+                "sizes": {"250 мл": 210, "350 мл": 230, "450 мл": 250},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "matcha",
+                "name": "Матча",
+                "description": "Японский зеленый чай матча",
+                "sizes": {"250 мл": 180, "350 мл": 200},
+                "has_milk_choice": True,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "coffee_gluhwein",
+                "name": "Кофейный глинтвейн",
+                "description": "Кофе с пряностями и апельсином",
+                "sizes": {"450 мл": 300},
+                "has_milk_choice": False,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "cherry_tea",
+                "name": "Вишневый чай",
+                "description": "Фруктовый чай с вишней",
+                "sizes": {"450 мл": 200},
+                "has_milk_choice": False,
+                "has_syrup_choice": False
+            },
+            {
+                "id": "tea",
+                "name": "Чай",
+                "description": "Ройбуш, Пуэр, Ду Хен Пау",
+                "sizes": {"450 мл": 150},
+                "has_milk_choice": False,
+                "has_syrup_choice": False
+            }
+        ]
     },
-    {
-        "id": "espresso",
-        "name": "Эспрессо",
-        "description": "Классический эспрессо",
-        "sizes": {"40 мл": 150},
-        "has_milk_choice": False,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "moccaccino",
-        "name": "Моккачино",
-        "description": "Кофе с шоколадом и молоком",
-        "sizes": {"350 мл": 260, "450 мл": 280},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "flat_white",
-        "name": "Флэт Уайт",
-        "description": "Двойной эспрессо с нежным молоком",
-        "sizes": {"250 мл": 240},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    
-    # Раф кофе
-    {
-        "id": "raf_classic",
-        "name": "Раф Классический",
-        "description": "Классический раф с ванилью",
-        "sizes": {"350 мл": 320, "450 мл": 340},
-        "has_milk_choice": True,
-        "has_syrup_choice": True
-    },
-    {
-        "id": "raf_salted_caramel",
-        "name": "Раф Соленая карамель",
-        "description": "Раф с соленой карамелью",
-        "sizes": {"350 мл": 280, "450 мл": 300},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "raf_peanut",
-        "name": "Раф Арахисовый",
-        "description": "Раф с арахисовым вкусом",
-        "sizes": {"350 мл": 340, "450 мл": 360},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "raf_cheese",
-        "name": "Раф Сырный",
-        "description": "Раф с сырным вкусом",
-        "sizes": {"350 мл": 320, "450 мл": 350},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "raf_orange",
-        "name": "Раф Апельсиновый",
-        "description": "Раф с апельсиновым вкусом",
-        "sizes": {"350 мл": 320, "450 мл": 340},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    
-    # Не кофе
-    {
-        "id": "cocoa",
-        "name": "Какао",
-        "description": "Горячее какао (без сахара, можно добавить в комментарии)",
-        "sizes": {"250 мл": 210, "350 мл": 230, "450 мл": 250},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "matcha",
-        "name": "Матча",
-        "description": "Японский зеленый чай матча",
-        "sizes": {"250 мл": 180, "350 мл": 200},
-        "has_milk_choice": True,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "coffee_gluhwein",
-        "name": "Кофейный глинтвейн",
-        "description": "Кофе с пряностями и апельсином",
-        "sizes": {"450 мл": 300},
-        "has_milk_choice": False,
-        "has_syrup_choice": False
-    },
-    
-    # Чай
-    {
-        "id": "cherry_tea",
-        "name": "Вишневый чай",
-        "description": "Фруктовый чай с вишней",
-        "sizes": {"450 мл": 200},
-        "has_milk_choice": False,
-        "has_syrup_choice": False
-    },
-    {
-        "id": "tea",
-        "name": "Чай",
-        "description": "Ройбуш, Пуэр, Ду Хен Пау",
-        "sizes": {"450 мл": 150},
-        "has_milk_choice": False,
-        "has_syrup_choice": False
-    },
-    
-    # Весовой кофе
-    {
-        "id": "brazil_fazenda",
-        "name": "Brazil Fazenda (в зернах)",
-        "description": "Бразильская арабика",
-        "sizes": {"100 г": 238, "250 г": 595, "500 г": 1190},
-        "has_milk_choice": False,
-        "has_syrup_choice": False,
-        "is_weight_coffee": True
-    },
-    {
-        "id": "nicaragua_maragogype",
-        "name": "Nicaragua Maragogype (в зернах)",
-        "description": "Никарагуанская арабика, крупное зерно",
-        "sizes": {"100 г": 350, "250 г": 875, "500 г": 1750},
-        "has_milk_choice": False,
-        "has_syrup_choice": False,
-        "is_weight_coffee": True
+    "weight_coffee": {
+        "name": "⚖️ Весовой кофе",
+        "emoji": "⚖️",
+        "items": [
+            {
+                "id": "brazil_fazenda",
+                "name": "Brazil Fazenda (в зернах)",
+                "description": "Бразильская арабика",
+                "sizes": {"100 г": 238, "250 г": 595, "500 г": 1190},
+                "has_milk_choice": False,
+                "has_syrup_choice": False,
+                "is_weight_coffee": True
+            },
+            {
+                "id": "nicaragua_maragogype",
+                "name": "Nicaragua Maragogype (в зернах)",
+                "description": "Никарагуанская арабика, крупное зерно",
+                "sizes": {"100 г": 350, "250 г": 875, "500 г": 1750},
+                "has_milk_choice": False,
+                "has_syrup_choice": False,
+                "is_weight_coffee": True
+            }
+        ]
     }
-]
+}
+
+# Для обратной совместимости создаем плоский список
+COFFEE_MENU = []
+for category in MENU_CATEGORIES.values():
+    COFFEE_MENU.extend(category["items"])
 
 # ==================== ОПЦИИ ====================
 
