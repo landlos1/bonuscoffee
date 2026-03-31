@@ -303,7 +303,7 @@ async def item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for size_name, size_price in item["sizes"].items():
         keyboard.append([InlineKeyboardButton(
             f"{size_name} - {format_price(size_price)}",
-            callback_data=f"size_{item_id}_{size_name}"
+            callback_data=f"size_{item_id}_{size_name}"  # Например: size_raf_peanut_350 мл
         )])
     keyboard.append([InlineKeyboardButton("🔙 Назад к категории", callback_data="back_category")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -361,17 +361,53 @@ async def size_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # Разбираем данные: size_latte_350 мл
-    data = query.data.replace("size_", "").split("_", 1)
-    item_id = data[0]  # latte
-    size_name = data[1]  # 350 мл
+    # Правильный парсинг: size_raf_peanut_350 мл
+    # Нужно разделить по "_", но учесть что в названии товара могут быть пробелы
+    data = query.data.replace("size_", "")
+    
+    # Находим последнее вхождение "_" для отделения размера
+    last_underscore = data.rfind("_")
+    if last_underscore == -1:
+        await query.edit_message_text("❌ Ошибка формата данных")
+        return
+    
+    item_id = data[:last_underscore]  # raf_peanut
+    size_name = data[last_underscore + 1:]  # 350 мл
     
     user_id = update.effective_user.id
-    item = user_orders[user_id]['item_data']
+    
+    # Находим товар по ID
+    item = None
+    for category in MENU_CATEGORIES.values():
+        for i in category["items"]:
+            if i["id"] == item_id:
+                item = i
+                break
+        if item:
+            break
+    
+    if not item:
+        await query.edit_message_text("❌ Товар не найден")
+        return
+    
+    # Получаем цену
+    if size_name not in item["sizes"]:
+        await query.edit_message_text(f"❌ Размер {size_name} не найден для {item['name']}")
+        return
+    
     size_price = item["sizes"][size_name]
     
-    user_orders[user_id]['size'] = size_name
-    user_orders[user_id]['base_price'] = size_price
+    # Сохраняем в user_orders
+    if user_id not in user_orders:
+        user_orders[user_id] = {}
+    
+    user_orders[user_id].update({
+        'item_id': item_id,
+        'item_name': item['name'],
+        'item_data': item,
+        'size': size_name,
+        'base_price': size_price
+    })
     
     # Если напиток требует выбора молока
     if item.get('has_milk_choice', False):
