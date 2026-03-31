@@ -1480,40 +1480,40 @@ def main():
     
     # ConversationHandler для заказа
     order_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(coffee_callback, pattern=r'^coffee_')],
-        states={
-            ORDER_SIZE: [
-                CallbackQueryHandler(size_callback, pattern=r'^size_'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-            ],
-            ORDER_MILK: [
-                CallbackQueryHandler(milk_callback, pattern=r'^milk_'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-            ],
-            ORDER_SYRUP: [
-                CallbackQueryHandler(syrup_callback, pattern=r'^syrup_'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-            ],
-            ORDER_COMMENT: [
-                CallbackQueryHandler(comment_callback, pattern=r'^(add_comment|skip_comment)$'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input),
-            ],
-            ORDER_BONUSES: [
-                CallbackQueryHandler(bonus_callback, pattern=r'^bonus_'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-            ],
-            ORDER_CONFIRM: [
-                CallbackQueryHandler(confirm_order_callback, pattern=r'^confirm_order$'),
-                CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$'),
-                CallbackQueryHandler(back_handler, pattern=r'^back_'),
-            ],
-        },
-        fallbacks=[
+    entry_points=[CallbackQueryHandler(item_callback, pattern=r'^item_')],
+    states={
+        ORDER_SIZE: [
+            CallbackQueryHandler(size_callback, pattern=r'^size_'),  # Это должно быть
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+        ],
+        ORDER_MILK: [
+            CallbackQueryHandler(milk_callback, pattern=r'^milk_'),
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+        ],
+        ORDER_SYRUP: [
+            CallbackQueryHandler(syrup_callback, pattern=r'^syrup_'),
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+        ],
+        ORDER_COMMENT: [
+            CallbackQueryHandler(comment_callback, pattern=r'^(add_comment|skip_comment)$'),
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, comment_input),
+        ],
+        ORDER_BONUSES: [
+            CallbackQueryHandler(bonus_callback, pattern=r'^bonus_'),
+            CallbackQueryHandler(back_handler, pattern=r'^back_'),
+        ],
+        ORDER_CONFIRM: [
+            CallbackQueryHandler(confirm_order_callback, pattern=r'^confirm_order$'),
             CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$'),
             CallbackQueryHandler(back_handler, pattern=r'^back_'),
         ],
-    )
+    },
+    fallbacks=[
+        CallbackQueryHandler(cancel_order_callback, pattern=r'^cancel_order$'),
+        CallbackQueryHandler(back_handler, pattern=r'^back_'),
+    ],
+)
     
     # ConversationHandler для рассылки
     broadcast_conv = ConversationHandler(
