@@ -255,6 +255,50 @@ async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Выберите напиток:",
         reply_markup=reply_markup
     )
+
+async def item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора товара"""
+    query = update.callback_query
+    await query.answer()
+    item_id = query.data.replace("item_", "")
+    
+    # Находим товар в меню
+    item = None
+    for category in MENU_CATEGORIES.values():
+        for i in category["items"]:
+            if i["id"] == item_id:
+                item = i
+                break
+        if item:
+            break
+    
+    if not item:
+        await query.edit_message_text("❌ Товар не найден")
+        return
+    
+    user_id = update.effective_user.id
+    user_orders[user_id] = {
+        'item_id': item_id,
+        'item_name': item['name'],
+        'item_data': item
+    }
+    
+    keyboard = []
+    for size_name, size_price in item["sizes"].items():
+        keyboard.append([InlineKeyboardButton(
+            f"{size_name} - {format_price(size_price)}",
+            callback_data=f"size_{item_id}_{size_name}"
+        )])
+    keyboard.append([InlineKeyboardButton("🔙 Назад к категории", callback_data="back_category")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"🍹 {item['name']}\n"
+        f"📝 {item['description']}\n\n"
+        f"Выберите объем/вес:",
+        reply_markup=reply_markup
+    )
+    return ORDER_SIZE
     
 async def coffee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора кофе"""
