@@ -361,31 +361,45 @@ async def size_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    size = query.data.replace("size_", "")
+    # Разбираем данные: size_latte_350 мл
+    data = query.data.replace("size_", "").split("_", 1)
+    item_id = data[0]  # latte
+    size_name = data[1]  # 350 мл
+    
     user_id = update.effective_user.id
+    item = user_orders[user_id]['item_data']
+    size_price = item["sizes"][size_name]
     
-    user_orders[user_id]['size'] = size
-    user_orders[user_id]['size_name'] = SIZE_OPTIONS[size]['name']
+    user_orders[user_id]['size'] = size_name
+    user_orders[user_id]['base_price'] = size_price
     
-    # Показываем выбор молока
-    keyboard = []
-    for milk_key, milk_data in MILK_OPTIONS.items():
-        price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
-        keyboard.append([InlineKeyboardButton(
-            f"{milk_data['name']} - {price_text}",
-            callback_data=f"milk_{milk_key}"
-        )])
+    # Если напиток требует выбора молока
+    if item.get('has_milk_choice', False):
+        keyboard = []
+        for milk_key, milk_data in MILK_OPTIONS.items():
+            price_text = f"+{format_price(milk_data['price'])}" if milk_data['price'] > 0 else "Бесплатно"
+            keyboard.append([InlineKeyboardButton(
+                f"{milk_data['name']} - {price_text}",
+                callback_data=f"milk_{milk_key}"
+            )])
+        keyboard.append([InlineKeyboardButton("🔙 Назад к объему", callback_data="back_size")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"🍹 {item['name']}\n"
+            f"📏 Объем: {size_name}\n"
+            f"💰 Цена: {format_price(size_price)}\n\n"
+            f"🥛 Выберите тип молока:",
+            reply_markup=reply_markup
+        )
+        return ORDER_MILK
     
-    keyboard.append([InlineKeyboardButton("🔙 Назад к размерам", callback_data="back_size")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Если напиток требует выбора сиропа
+    elif item.get('has_syrup_choice', False):
+        return await show_syrup_selection(update, context)
     
-    await query.edit_message_text(
-        f"☕ {user_orders[user_id]['coffee_name']}\n"
-        f"📏 Размер: {user_orders[user_id]['size_name']}\n\n"
-        f"🥛 Выберите тип молока:",
-        reply_markup=reply_markup
-    )
-    return ORDER_MILK
+    # Если не требует ни молока, ни сиропа
+    else:
+        return await show_comment_selection(update, context)
 
 async def milk_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора молока"""
