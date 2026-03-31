@@ -220,6 +220,45 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора категории"""
+    query = update.callback_query
+    await query.answer()
+    
+    category_key = query.data.replace("category_", "")
+    category = MENU_CATEGORIES.get(category_key)
+    
+    if not category:
+        await query.edit_message_text("❌ Категория не найдена")
+        return
+    
+    # Сохраняем выбранную категорию
+    context.user_data['current_category'] = category_key
+    
+    # Показываем товары в категории
+    keyboard = []
+    for item in category["items"]:
+        # Показываем диапазон цен
+        prices = list(item["sizes"].values())
+        if len(prices) == 1:
+            price_text = format_price(prices[0])
+        else:
+            price_text = f"{format_price(min(prices))}-{format_price(max(prices))}"
+        
+        keyboard.append([InlineKeyboardButton(
+            f"{item['name']} - {price_text}",
+            callback_data=f"item_{item['id']}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Назад к категориям", callback_data="back_categories")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"{category['emoji']} {category['name']}\n\n"
+        f"Выберите напиток:",
+        reply_markup=reply_markup
+    )
+    
 async def coffee_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора кофе"""
     query = update.callback_query
@@ -1423,6 +1462,11 @@ def main():
     application.add_handler(order_conv)
     application.add_handler(broadcast_conv)
     
+    # Обработчики для категорий меню
+    application.add_handler(CallbackQueryHandler(category_callback, pattern=r'^category_'))
+    application.add_handler(CallbackQueryHandler(item_callback, pattern=r'^item_'))
+    application.add_handler(CallbackQueryHandler(show_menu_callback, pattern=r'^back_categories$'))
+
     # Обработчики для администраторов
     application.add_handler(CallbackQueryHandler(admin_accept_order, pattern=r'^admin_accept_'))
     application.add_handler(CallbackQueryHandler(admin_preparing_order, pattern=r'^admin_prep_'))
