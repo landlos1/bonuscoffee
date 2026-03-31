@@ -217,6 +217,22 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+async def show_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать категории меню (из callback)"""
+    query = update.callback_query
+    keyboard = []
+    for category_key, category in MENU_CATEGORIES.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{category['emoji']} {category['name']}",
+            callback_data=f"category_{category_key}"
+        )])
+    keyboard.append(get_back_button())
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"☕ Меню {COFFEE_SHOP_NAME}:\n\nВыберите категорию:",
+        reply_markup=reply_markup
+    )
+    
 async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора категории"""
     query = update.callback_query
