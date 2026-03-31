@@ -202,21 +202,18 @@ async def reg_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== МЕНЮ И ЗАКАЗ ====================
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать меню кофе"""
+    """Показать категории меню"""
     keyboard = []
-    
-    for coffee in COFFEE_MENU:
+    for category_key, category in MENU_CATEGORIES.items():
         keyboard.append([InlineKeyboardButton(
-            f"{coffee['name']} - {format_price(coffee['price'])}",
-            callback_data=f"coffee_{coffee['id']}"
+            f"{category['emoji']} {category['name']}",
+            callback_data=f"category_{category_key}"
         )])
-    
     keyboard.append(get_back_button())
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(
         f"☕ Меню {COFFEE_SHOP_NAME}:\n\n"
-        f"Выберите кофе:",
+        f"Выберите категорию:",
         reply_markup=reply_markup
     )
 
